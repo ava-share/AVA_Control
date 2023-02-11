@@ -1,0 +1,9 @@
+[submodule "ros_node_stanley_control"]
+	path = ros_node_stanley_control
+	url = git@github.com:ava-share/ros_node_stanley_control.git
+[submodule "MPC"]
+	path = MPC
+	url = git@github.com:ava-share/MPC.git
+[submodule "lateral_control_matlab"]
+	path = lateral_control_matlab
+	url = git@github.com:tvidano/lateral_control_matlab.git
