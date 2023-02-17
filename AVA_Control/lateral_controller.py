@@ -16,11 +16,12 @@ parser = argparse.ArgumentParser(
     prog='LateralControlROSNode',
     formatter_class=argparse.RawDescriptionHelpFormatter,
     description="Lateral Controller for Autoware AI",
-    epilog='A python ROS node implementing a lateral controller for use with '\
-            'Autoware AI.')
+    epilog='A python ROS node implementing a lateral controller for use with '
+    'Autoware AI.')
 parser.add_argument('--config', type=str,
                     required=True,
                     help='The path to the configuration file.')
+
 
 def uniquify(path):
     """Create a unique filename if file already exists."""
@@ -35,6 +36,7 @@ def uniquify(path):
 
 class NpEncoder(json.JSONEncoder):
     """Class used to enable JSON serialization of Numpy objects."""
+
     def default(self, obj):
         if isinstance(obj, np.integer):
             return int(obj)
@@ -50,8 +52,8 @@ class NpEncoder(json.JSONEncoder):
 class AbstractLateralController:
     """An absctract lateral controller class intended to define the minimum
     methods and attributes to be implemented as a rosnode."""
-    
-    def compute_error(self, ego_x, ego_y, ego_yaw, ref_x, ref_y, ref_yaw, 
+
+    def compute_error(self, ego_x, ego_y, ego_yaw, ref_x, ref_y, ref_yaw,
                       lookahead):
         """Computes the crosstrack error and yaw error.
 
@@ -77,18 +79,17 @@ class AbstractLateralController:
         crosstrack_err = ref_to_axle.dot(crosstrack_vector)
         if self.config["enable_logging"]:
             self.recorder.crosstrack_error.append(crosstrack_err)
-        
+
         return crosstrack_err
 
     def get_steer_angle(self):
         """Computes the steer angle according to the lateral control law."""
         raise NotImplementedError
-    
+
 
 class StanleyController(AbstractLateralController):
-    def __init__(self, recorder, config, control_gain, softening_gain, 
+    def __init__(self, recorder, config, control_gain, softening_gain,
                  max_steer, wheelbase, enable_LPF, LPF_bandwidth):
-        
         """
         TUNING PARAMETERS   Tune control_gain first. Probably won't need to 
                             change softening_gain.
@@ -114,19 +115,18 @@ class StanleyController(AbstractLateralController):
         """
         self.recorder = recorder
         self.config = config
-        
+
         self.k = control_gain
         self.k_soft = softening_gain
         self.max_steer = max_steer
         self.L = wheelbase
 
         self.prev_steer_angle = 0  # [rad]
-        
+
         # TUNING PARAMETERS (change if needed)
         self.enable_LPF = enable_LPF
         self.LPF_bandwidth = LPF_bandwidth  # [Hz]
-             
-    
+
     def get_steer_angle(self, x, y, yaw, current_velocity, px, py, pyaw):
         """
         :param x:
@@ -141,7 +141,7 @@ class StanleyController(AbstractLateralController):
 
         # Stanley Control law.
         yaw_term = pyaw - yaw
-        tangent_term = np.arctan((self.k*crosstrack_error/ \
+        tangent_term = np.arctan((self.k*crosstrack_error /
                                   (current_velocity + self.k_soft)))
         steer_angle = yaw_term + tangent_term
         if self.config["enable_debugging"]:
@@ -154,11 +154,11 @@ class StanleyController(AbstractLateralController):
         # Low pass filter (linearly interpolate between previous and current
         # angle).
         if self.enable_LPF:
-            Ts = 1./100. # sampling rate of steering angle signal
+            Ts = 1./100.  # sampling rate of steering angle signal
             Tc = 1./self.LPF_bandwidth
             steer_angle = (1.0 - Ts/Tc) * self.prev_steer_angle + \
-                          Ts/Tc * steer_angle
-            
+                Ts/Tc * steer_angle
+
         self.prev_steer_angle = steer_angle
 
         return steer_angle
@@ -167,7 +167,7 @@ class StanleyController(AbstractLateralController):
 class DiscreteFilter:
     """An FIR filter implemented as a difference equation. This is to remove
     dependency on scipy.signal.lfilter.
-    
+
     The discrete time transfer function is:
                                 -1              -M
                 b[0] + b[1]z  + ... + b[M] z
@@ -175,6 +175,7 @@ class DiscreteFilter:
                             -1              -N
                 a[0] + a[1]z  + ... + a[N] z
     """
+
     def __init__(self, b, a):
         self.b = b  # the numerator coefficients
         self.a = a  # the denominator coefficients
@@ -183,7 +184,7 @@ class DiscreteFilter:
 
     def get_output(self, input):
         """Computes the output of the filter.
-        
+
         Computes the next output, y[n] given y[n-1:n-N] and x[n:n-M] where 
         n is the sample number and N is the filter order:
             a[0]*y[n] = b[0]*x[n] + b[1]*x[n-1] + ... + b[M]*x[n-M]
@@ -191,7 +192,7 @@ class DiscreteFilter:
         """
         self.past_inputs.appendleft(input)
         new_output = np.dot(self.b, self.past_inputs) - \
-                     np.dot(self.a[1:], self.past_outputs)
+            np.dot(self.a[1:], self.past_outputs)
         new_output /= self.a[0]
         self.past_outputs.appendleft(new_output)
         return new_output
@@ -204,19 +205,19 @@ class SISOLookaheadController(AbstractLateralController):
 
     def __init__(self, numerator, denominator, lookahead, config):
         self.config = config
-        self.control_filter = DiscreteFilter(numerator, 
+        self.control_filter = DiscreteFilter(numerator,
                                              denominator)
         self.lookahead = lookahead
 
     def get_steer_angle(self, x, y, yaw, ref_x, ref_y, ref_yaw):
         """Compute steer angle using a discrete FIR filter."""
-        crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y, \
+        crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y,
                                               ref_yaw, self.lookahead)
-        rospy.loginfo("Crosstrack error [m]: %s"%crosstrack_error)
+        rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
         delta = self.control_filter.get_output(crosstrack_error)
         delta *= 2
-        #delta = 0.01 * crosstrack_error
-        rospy.loginfo("Steer Angle [deg]: %s"%(delta*180/np.pi))
+        # delta = 0.01 * crosstrack_error
+        rospy.loginfo("Steer Angle [deg]: %s" % (delta*180/np.pi))
         delta = np.clip(delta, -35 * np.pi / 180, 35 * np.pi / 180)
         return delta
 
@@ -235,8 +236,8 @@ class Data:
         self.y = []
         self.yaw = []
         self.crosstrack_error = []
-        self.auto = [] # autonomous or manual?
-        self.t = [] # time
+        self.auto = []  # autonomous or manual?
+        self.t = []  # time
 
     def to_csv(self, file_path):
         """Publish all data to csv files and configuration to json file."""
@@ -249,7 +250,7 @@ class Data:
             i = 0
             while i < len(self.steering):
                 test = ','.join((
-                    str(self.t[i]),             str(self.steering[i]),  
+                    str(self.t[i]),             str(self.steering[i]),
                     str(self.vx[i]),            str(self.px[i]),
                     str(self.py[i]),            str(self.crosstrack_error[i]),
                     str(self.pyaw[i]),          str(self.x[i]),
@@ -276,13 +277,13 @@ class Data:
         config_path = os.path.join(save_dir, experiment_name + "_config.json")
         config_path = uniquify(config_path)
         with open(config_path, "w") as f:
-            f.write(json.dumps(self.config, sort_keys=True, indent=4, 
+            f.write(json.dumps(self.config, sort_keys=True, indent=4,
                                cls=NpEncoder))
 
 
 class ROSLateralController:
     """Class implementation of a lateral controller packaged as a ROS node."""
-    
+
     def __init__(self):
         rospy.init_node('lateral_control')
         rospy.loginfo("Initialized lateral_control node.")
@@ -300,12 +301,12 @@ class ROSLateralController:
         self.ego_pose = None
         self.ego_twist = None
 
-        rospy.Subscriber("/ctrl_reference_pose", PoseStamped, 
+        rospy.Subscriber("/ctrl_reference_pose", PoseStamped,
                          callback=self.ReferencePoseCallback, queue_size=1)
-        rospy.Subscriber("/current_pose"  , PoseStamped, 
-                         callback = self.CurrentPoseCallback, queue_size=1)
+        rospy.Subscriber("/current_pose", PoseStamped,
+                         callback=self.CurrentPoseCallback, queue_size=1)
         rospy.Subscriber("/current_velocity", TwistStamped,
-                         callback = self.CurrentTwistCallback, queue_size=1)
+                         callback=self.CurrentTwistCallback, queue_size=1)
 
         if self.config["controller_type"] == "stanley":
             ctrl_config = self.config["controller_config"]
@@ -327,17 +328,17 @@ class ROSLateralController:
                 lookahead=ctrl_config["lookahead_m"])
         else:
             raise NotImplementedError
-        
+
         if self.config["enable_velocity_control"]:
             self.constant_vx = self.config["constant_velocity_mps"]
         else:
             self.constant_vx = None  # Converts to 0 unless overwritten.
-        
+
         if self.config["enable_acceleration_control"]:
             self.constant_acc = self.config["constant_acceleration_mps2"]
         else:
             self.constant_acc = None  # Converts to 0 unless overwritten.
-        
+
         rospy.loginfo("Begin publishing control commands.")
         while not rospy.is_shutdown():
             self.publisher()
@@ -350,7 +351,7 @@ class ROSLateralController:
         msg_ctrl.cmd.linear_velocity = 0
         msg_ctrl.cmd.linear_acceleration = 0
 
-        pub_pose = rospy.Publisher("/ctrl_raw", ControlCommandStamped, 
+        pub_pose = rospy.Publisher("/ctrl_raw", ControlCommandStamped,
                                    queue_size=1)
         pub_pose.publish(msg_ctrl)
 
@@ -359,11 +360,11 @@ class ROSLateralController:
             self.recording.save_data()
 
         rospy.loginfo("Shutting down lateral_control node.")
-        
+
     def ReferencePoseCallback(self, msg):
         """Get the current reference pose."""
         self.ref_pose = msg.pose
-            
+
     def CurrentPoseCallback(self, msg):
         """Get the current pose of the vehicle."""
         self.ego_pose = msg.pose
@@ -371,7 +372,7 @@ class ROSLateralController:
     def CurrentTwistCallback(self, msg):
         """Get the current linear and angular velocities of the vehicle."""
         self.ego_twist = msg.twist
- 
+
     def publisher(self):
         """Compute and publish control command."""
         # Store ego/ref pose to prevent overwritting while computing.
@@ -380,7 +381,7 @@ class ROSLateralController:
         else:
             rospy.loginfo_throttle(1, "Waiting for reference pose.")
             return
-        
+
         if self.ego_pose is not None:
             ego_x, ego_y, ego_yaw = self.unpack_pose(self.ego_pose)
         else:
@@ -391,7 +392,7 @@ class ROSLateralController:
             ego_vx = self.ego_twist.linear.x
         else:
             rospy.loginfo_throttle(1, "Waiting for ego twist.")
-        
+
         # TODO: Come up with a better controller API so we don't need different
         # calls.
         if self.config["controller_type"] == "stanley":
@@ -406,7 +407,7 @@ class ROSLateralController:
         else:
             steer_angle = 0
             rospy.logerr("No steering controller selected in config.")
-        
+
         # Create control message to send.
         msg_ctrl = ControlCommandStamped()
         msg_ctrl.header.stamp = rospy.get_rostime()
@@ -425,14 +426,14 @@ class ROSLateralController:
             self.recording.x.append(self.ego_x)
             self.recording.y.append(self.ego_y)
             self.recording.yaw.append(self.ego_yaw)
-            
+
             self.recording.px.append(ref_x)
             self.recording.py.append(self.ref_y)
             self.recording.pyaw.append(self.ref_yaw)
-            
+
             self.recording.auto.append(1)
 
-        pub_pose = rospy.Publisher("/ctrl_raw", ControlCommandStamped, 
+        pub_pose = rospy.Publisher("/ctrl_raw", ControlCommandStamped,
                                    queue_size=1)
         pub_pose.publish(msg_ctrl)
 
@@ -448,6 +449,7 @@ class ROSLateralController:
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    # Change something.
     try:
         ROSLateralController()
     except rospy.ROSInterruptException:
