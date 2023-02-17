@@ -1,0 +1,15 @@
+{
+    "rate_Hz": 100,
+    "controller_type": "SISOLookaheadYoula",
+    "controller_config": {
+        "numerator": [0, 0.1100, -0.3060, 0.2839, -0.0878],
+        "denominator": [1, -3.4403, 4.4399, -2.5499, 0.5504],
+        "lookahead_m": 10.0
+    },
+    "enable_velocity_control": true,
+    "constant_velocity_mps": 5.0,
+    "enable_acceleration_control": true,
+    "constant_acceleration_mps2": 0.0,
+    "enable_debugging": false,
+    "enable_logging": false
+}

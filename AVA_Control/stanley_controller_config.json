@@ -1,0 +1,19 @@
+{
+    "rate_Hz": 100,
+    "controller_type": "stanley",
+    "controller_config": {
+        "ctrl_gain": 0.5,
+        "softening_gain": 1.0,
+        "max_steer_rad": 24,
+        "wheelbase_m": 2.9,
+        "lookahead_m": 2.9,
+        "enable_lowpass_filter": true,
+        "lowpass_filter_bandwidth_Hz": 1
+    },
+    "enable_velocity_control": true,
+    "constant_velocity_mps": 5.0,
+    "enable_acceleration_control": true,
+    "constant_acceleration_mps2": 0.0,
+    "enable_debugging": false,
+    "enable_logging": false
+}
