@@ -346,6 +346,7 @@ class ROSLateralController:
 
     def my_hook(self):
         """Executed at ROS node shutdown."""
+        rospy.loginfo("Shutting down lateral_control node.")
         msg_ctrl = ControlCommandStamped()
         msg_ctrl.header.stamp = rospy.get_rostime()
         msg_ctrl.cmd.steering_angle = 0
@@ -358,9 +359,10 @@ class ROSLateralController:
 
         # TODO: Setup automatic name changing for each run.
         if self.config["enable_logging"]:
+            rospy.loginfo("Saving data to csv...")
             self.recording.save_data()
-
-        rospy.loginfo("Shutting down lateral_control node.")
+            rospy.loginfo("Done saving data to csv.")
+        rospy.loginfo("lateral_control node shutdown successfully.")
 
     def ReferencePoseCallback(self, msg):
         """Get the current reference pose."""
@@ -432,7 +434,7 @@ class ROSLateralController:
         # Store steering so it can be used by lateral control when filtering.
         self.recording.steering.append(steer_angle)
         if self.config["enable_logging"]:
-            rospy.loginfo_once("Logging to csv.")
+            rospy.loginfo_once("Recording to data logger.")
             self.recording.t.append(rospy.get_rostime())
             self.recording.vx.append(ego_vx)
             self.recording.egox.append(ego_x)
