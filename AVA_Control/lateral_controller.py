@@ -378,21 +378,27 @@ class ROSLateralController:
         """Compute and publish control command."""
         # Store ego/ref pose to prevent overwritting while computing.
         if self.ref_pose is not None:
+            rospy.loginfo_once("Received reference pose.")
             ref_x, ref_y, ref_yaw = self.unpack_pose(self.ref_pose)
         else:
             rospy.loginfo_throttle(1, "Waiting for reference pose.")
-            return
 
         if self.ego_pose is not None:
+            rospy.loginfo_once("Received ego pose.")
             ego_x, ego_y, ego_yaw = self.unpack_pose(self.ego_pose)
         else:
             rospy.loginfo_throttle(1, "Waiting for ego pose.")
-            return
 
         if self.ego_twist is not None:
+            rospy.loginfo_once("Received ego twist.")
             ego_vx = self.ego_twist.linear.x
         else:
             rospy.loginfo_throttle(1, "Waiting for ego twist.")
+        
+        if self.ref_pose is None or \
+                self.ego_pose is None or \
+                self.ego_twist is None:
+            return
 
         # TODO: Come up with a better controller API so we don't need different
         # calls.
@@ -422,6 +428,7 @@ class ROSLateralController:
         # Store steering so it can be used by lateral control when filtering.
         self.recording.steering.append(steer_angle)
         if self.config["enable_logging"]:
+            rospy.loginfo_once("Logging to csv.")
             self.recording.t.append(rospy.get_rostime())
             self.recording.vx.append(ego_vx)
             self.recording.egox.append(ego_x)
