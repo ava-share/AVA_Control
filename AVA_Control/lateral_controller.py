@@ -377,27 +377,31 @@ class ROSLateralController:
     def publisher(self):
         """Compute and publish control command."""
         # Store ego/ref pose to prevent overwritting while computing.
-        if self.ref_pose is not None:
+        ref_pose = self.ref_pose
+        ego_pose = self.ego_pose
+        ego_twist = self.ego_twist
+
+        if ref_pose is not None:
             rospy.loginfo_once("Received reference pose.")
-            ref_x, ref_y, ref_yaw = self.unpack_pose(self.ref_pose)
+            ref_x, ref_y, ref_yaw = self.unpack_pose(ref_pose)
         else:
             rospy.loginfo_throttle(1, "Waiting for reference pose.")
 
-        if self.ego_pose is not None:
+        if ego_pose is not None:
             rospy.loginfo_once("Received ego pose.")
-            ego_x, ego_y, ego_yaw = self.unpack_pose(self.ego_pose)
+            ego_x, ego_y, ego_yaw = self.unpack_pose(ego_pose)
         else:
             rospy.loginfo_throttle(1, "Waiting for ego pose.")
 
-        if self.ego_twist is not None:
+        if ego_twist is not None:
             rospy.loginfo_once("Received ego twist.")
-            ego_vx = self.ego_twist.linear.x
+            ego_vx = ego_twist.linear.x
         else:
             rospy.loginfo_throttle(1, "Waiting for ego twist.")
         
-        if self.ref_pose is None or \
-                self.ego_pose is None or \
-                self.ego_twist is None:
+        if ref_pose is None or \
+                ego_pose is None or \
+                ego_twist is None:
             return
 
         # TODO: Come up with a better controller API so we don't need different
