@@ -20,6 +20,7 @@ git submodule update --init --recursive
 # Collaboration
 1. Pull Requests (PRs) to `main` are required to be signed. If you cloned this repository using SSH you can configure git on your local machine to use your existing SSH keys to sign your commits. Follow the instructions [here](https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key).
     - use `-S` flag to sign commits. Ex. `git commit -S -m "My signed commit msg."`
+    - you will also have to tell github that your existing SSH public key is being used for Authentication and for Signing. [This link](https://dev.to/pwd9000/github-commit-verification-using-ssh-2pim) is helpful. You can skip to part 2.) Create a SSH Signing Key and then follow steps 1-3.
 2. PRs are required to push to `main`. 
 3. PRs to `main` require approval from codeowners. This is to reduce the burden on one single maintainer and to ensure that the code is reviewed by someone familiar with the impacted files.
 4. Please make changes to a branch that identifies yourself as the author and a meaningful name.
