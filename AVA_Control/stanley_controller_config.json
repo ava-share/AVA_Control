@@ -15,5 +15,5 @@
     "enable_acceleration_control": true,
     "constant_acceleration_mps2": 0.0,
     "enable_debugging": false,
-    "enable_logging": false
+    "enable_logging": true
 }

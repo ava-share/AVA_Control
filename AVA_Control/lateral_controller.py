@@ -127,7 +127,7 @@ class StanleyController(AbstractLateralController):
         self.enable_LPF = enable_LPF
         self.LPF_bandwidth = LPF_bandwidth  # [Hz]
 
-    def get_steer_angle(self, x, y, yaw, current_velocity, px, py, pyaw):
+    def get_steer_angle(self, x, y, yaw, current_velocity, refx, refy, refyaw):
         """
         :param x:
         :param y:
@@ -135,12 +135,12 @@ class StanleyController(AbstractLateralController):
         :param current_velocity:
         :return: steering output, target index, crosstrack error
         """
-        crosstrack_error = self.compute_error(x, y, yaw, px, py, pyaw, self.L)
+        crosstrack_error = self.compute_error(x, y, yaw, refx, refy, refyaw, self.L)
         if self.config["enable_debugging"]:
             print('Crosstrack_Error: '+str(crosstrack_error))
 
         # Stanley Control law.
-        yaw_term = pyaw - yaw
+        yaw_term = refyaw - yaw
         tangent_term = np.arctan((self.k*crosstrack_error /
                                   (current_velocity + self.k_soft)))
         steer_angle = yaw_term + tangent_term
@@ -229,12 +229,12 @@ class Data:
         self.config = experiment_config
         self.steering = []
         self.vx = []
-        self.px = []
-        self.py = []
-        self.pyaw = []
-        self.x = []
-        self.y = []
-        self.yaw = []
+        self.refx = []
+        self.refy = []
+        self.refyaw = []
+        self.egox = []
+        self.egoy = []
+        self.egoyaw = []
         self.crosstrack_error = []
         self.auto = []  # autonomous or manual?
         self.t = []  # time
@@ -243,18 +243,19 @@ class Data:
         """Publish all data to csv files and configuration to json file."""
         # Store data in csv file.
         with open(file_path, 'a') as f:
-            test = "t [s], steering [rad], vx [m/s], px [m], py [m], "\
-                "pyaw [rad], x [m], y [m], yaw [rad], crosstrack_error [m]\n"
-            f.write(test)
+            m = "t [s], steering [rad], vx [m/s], refx [m], refy [m], "\
+                "refyaw [rad], egox [m], egoy [m], egoyaw [rad], "\
+                "crosstrack_error [m]\n"
+            f.write(m)
 
             i = 0
             while i < len(self.steering):
                 test = ','.join((
                     str(self.t[i]),             str(self.steering[i]),
-                    str(self.vx[i]),            str(self.px[i]),
-                    str(self.py[i]),            str(self.crosstrack_error[i]),
-                    str(self.pyaw[i]),          str(self.x[i]),
-                    str(self.y[i]),             str(self.yaw[i]),
+                    str(self.vx[i]),            str(self.refx[i]),
+                    str(self.refy[i]),          str(self.crosstrack_error[i]),
+                    str(self.refyaw[i]),        str(self.egox[i]),
+                    str(self.egoy[i]),          str(self.egoyaw[i]),
                     str(self.auto[i]))
                 )
                 i += 1
@@ -345,6 +346,7 @@ class ROSLateralController:
 
     def my_hook(self):
         """Executed at ROS node shutdown."""
+        rospy.loginfo("Shutting down lateral_control node.")
         msg_ctrl = ControlCommandStamped()
         msg_ctrl.header.stamp = rospy.get_rostime()
         msg_ctrl.cmd.steering_angle = 0
@@ -357,9 +359,10 @@ class ROSLateralController:
 
         # TODO: Setup automatic name changing for each run.
         if self.config["enable_logging"]:
+            rospy.loginfo("Saving data to csv...")
             self.recording.save_data()
-
-        rospy.loginfo("Shutting down lateral_control node.")
+            rospy.loginfo("Done saving data to csv.")
+        rospy.loginfo("lateral_control node shutdown successfully.")
 
     def ReferencePoseCallback(self, msg):
         """Get the current reference pose."""
@@ -376,22 +379,32 @@ class ROSLateralController:
     def publisher(self):
         """Compute and publish control command."""
         # Store ego/ref pose to prevent overwritting while computing.
-        if self.ref_pose is not None:
-            ref_x, ref_y, ref_yaw = self.unpack_pose(self.ref_pose)
+        ref_pose = self.ref_pose
+        ego_pose = self.ego_pose
+        ego_twist = self.ego_twist
+
+        if ref_pose is not None:
+            rospy.loginfo_once("Received reference pose.")
+            ref_x, ref_y, ref_yaw = self.unpack_pose(ref_pose)
         else:
             rospy.loginfo_throttle(1, "Waiting for reference pose.")
-            return
 
-        if self.ego_pose is not None:
-            ego_x, ego_y, ego_yaw = self.unpack_pose(self.ego_pose)
+        if ego_pose is not None:
+            rospy.loginfo_once("Received ego pose.")
+            ego_x, ego_y, ego_yaw = self.unpack_pose(ego_pose)
         else:
             rospy.loginfo_throttle(1, "Waiting for ego pose.")
-            return
 
-        if self.ego_twist is not None:
-            ego_vx = self.ego_twist.linear.x
+        if ego_twist is not None:
+            rospy.loginfo_once("Received ego twist.")
+            ego_vx = ego_twist.linear.x
         else:
             rospy.loginfo_throttle(1, "Waiting for ego twist.")
+        
+        if ref_pose is None or \
+                ego_pose is None or \
+                ego_twist is None:
+            return
 
         # TODO: Come up with a better controller API so we don't need different
         # calls.
@@ -421,15 +434,16 @@ class ROSLateralController:
         # Store steering so it can be used by lateral control when filtering.
         self.recording.steering.append(steer_angle)
         if self.config["enable_logging"]:
+            rospy.loginfo_once("Recording to data logger.")
             self.recording.t.append(rospy.get_rostime())
-            self.recording.vx.append(self.ego_vx)
-            self.recording.x.append(self.ego_x)
-            self.recording.y.append(self.ego_y)
-            self.recording.yaw.append(self.ego_yaw)
+            self.recording.vx.append(ego_vx)
+            self.recording.egox.append(ego_x)
+            self.recording.egoy.append(ego_y)
+            self.recording.egoyaw.append(ego_yaw)
 
-            self.recording.px.append(ref_x)
-            self.recording.py.append(self.ref_y)
-            self.recording.pyaw.append(self.ref_yaw)
+            self.recording.refx.append(ref_x)
+            self.recording.refy.append(ref_y)
+            self.recording.refyaw.append(ref_yaw)
 
             self.recording.auto.append(1)
 
