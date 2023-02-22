@@ -18,9 +18,10 @@ git submodule update --init --recursive
 - `TAMU_vector_maps` contains directories of vector maps used by Texas A & M University (TAMU) in doing demos.
 
 # Collaboration
-1. Pull Requests (PRs) are required to push to `main`. 
-2. PRs to `main` require approval from codeowners. This is to reduce the burden on one single maintainer and to ensure that the code is reviewed by someone familiar with the impacted files.
-2. Please make changes to a branch that identifies yourself as the author and a meaningful name.
+1. Pull Requests (PRs) to `main` are required to be signed. If you cloned this repository using SSH you can configure git on your local machine to use your existing SSH keys to sign your commits. Follow the instructions [here](https://docs.github.com/en/authentication/managing-commit-signature-verification/telling-git-about-your-signing-key).
+2. PRs are required to push to `main`. 
+3. PRs to `main` require approval from codeowners. This is to reduce the burden on one single maintainer and to ensure that the code is reviewed by someone familiar with the impacted files.
+4. Please make changes to a branch that identifies yourself as the author and a meaningful name.
     - Example: ```tvidano/add_collaboration_to_readme```
-3. Please use informative PR names and descriptions. They are used as the default commit message.
-4. Please [squash and merge](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/about-pull-request-merges) commits to `main` so that the commit history is clean.
+5. Please use informative PR names and descriptions. They are used as the default commit message.
+6. Please [squash and merge](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/about-pull-request-merges) commits to `main` so that the commit history is clean.
