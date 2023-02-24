@@ -231,7 +231,7 @@ class DiscreteStateSpace:
         rospy.loginfo(state_msg[:-2])
         output = self.C.dot(self.x_k) + self.D.dot(input)
         self.x_k = new_x
-        return output
+        return float(output)
 
 
 class SISOLookaheadController(AbstractLateralController):
