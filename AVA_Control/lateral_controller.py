@@ -309,10 +309,9 @@ class Data:
                 test = ','.join((
                     str(self.t[i]),             str(self.steering[i]),
                     str(self.vx[i]),            str(self.refx[i]),
-                    str(self.refy[i]),          str(self.crosstrack_error[i]),
-                    str(self.refyaw[i]),        str(self.egox[i]),
-                    str(self.egoy[i]),          str(self.egoyaw[i]),
-                    str(self.auto[i]))
+                    str(self.refy[i]),          str(self.refyaw[i]),
+                    str(self.egox[i]),          str(self.egoy[i]),
+                    str(self.egoyaw[i]),        str(self.crosstrack_error[i]))
                 )
                 i += 1
                 f.write(test)
@@ -521,7 +520,7 @@ class ROSLateralController:
         y = pose.position.y
         q = pose.orientation
         _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
-        
+
         # Wrap yaw angle around (-pi, pi).
         if yaw > np.pi:
             yaw -= 2*np.pi
