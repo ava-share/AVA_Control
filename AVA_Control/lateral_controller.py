@@ -377,18 +377,25 @@ class ROSLateralController:
                 LPF_bandwidth=ctrl_config["lowpass_filter_bandwidth_Hz"])
         elif self.config["controller_type"] == "SISOLookaheadYoula":
             ctrl_config = self.config["controller_config"]
-            self.controller = SISOLookaheadController(
-                recorder=self.recording,
-                config=self.config,
-                # A=np.array(ctrl_config["A"]),
-                # B=np.array(ctrl_config["B"]),
-                # C=np.array(ctrl_config["C"]),
-                # D=np.array(ctrl_config["D"]),
-                # num_states=ctrl_config["num_controller_states"],
-                numerator=ctrl_config["numerator"],
-                denominator=ctrl_config["denominator"],
-                lookahead=ctrl_config["lookahead_m"],
-                yaw_err_gain=ctrl_config["yaw_err_gain"])
+            if ctrl_config["use_state_space"]:
+                self.controller = SISOLookaheadController(
+                    recorder=self.recording,
+                    config=self.config,
+                    A=np.array(ctrl_config["A"]),
+                    B=np.array(ctrl_config["B"]),
+                    C=np.array(ctrl_config["C"]),
+                    D=np.array(ctrl_config["D"]),
+                    num_states=ctrl_config["num_controller_states"],
+                    lookahead=ctrl_config["lookahead_m"],
+                    yaw_err_gain=ctrl_config["yaw_err_gain"])
+            else:
+                self.controller = SISOLookaheadController(
+                    recorder=self.recording,
+                    config=self.config,
+                    numerator=ctrl_config["numerator"],
+                    denominator=ctrl_config["denominator"],
+                    lookahead=ctrl_config["lookahead_m"],
+                    yaw_err_gain=ctrl_config["yaw_err_gain"])
         else:
             raise NotImplementedError
 
