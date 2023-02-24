@@ -521,6 +521,12 @@ class ROSLateralController:
         y = pose.position.y
         q = pose.orientation
         _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
+        
+        # Wrap yaw angle around (-pi, pi).
+        if yaw > np.pi:
+            yaw -= 2*np.pi
+        if yaw < -np.pi:
+            yaw += 2*np.pi
         return x, y, yaw
 
 
