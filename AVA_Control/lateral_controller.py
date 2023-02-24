@@ -223,7 +223,7 @@ class DiscreteStateSpace:
         self.num_states = num_states
         self.x_k = np.zeros((num_states,1))
 
-    def get_output(self, input):
+    def get_output(self, input, saturation=None):
         """Computes the output of the discrete state equation."""
         new_x = self.A.dot(self.x_k) + self.B.dot(input)
         state_msg = "States: \n"
@@ -231,6 +231,13 @@ class DiscreteStateSpace:
             state_msg += "\t %s: %s\n" % (i, self.x_k[i])
         rospy.loginfo(state_msg[:-2])
         output = self.C.dot(self.x_k) + self.D.dot(input)
+
+        # Implement anti-windup as saturating the inner states when the output
+        # exceeds the output saturation.
+        if saturation:
+            next_output = self.C.dot(new_x) + self.D.dot(input)
+            if abs(next_output) > abs(saturation):
+                return float(output)
         self.x_k = new_x
         return float(output)
 
@@ -250,15 +257,16 @@ class SISOLookaheadController(AbstractLateralController):
 
     def get_steer_angle(self, x, y, yaw, ref_x, ref_y, ref_yaw):
         """Compute steer angle using a discrete FIR filter."""
+        steer_limit = 35 * np.pi / 180
         crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y,
                                               ref_yaw, self.lookahead)
         yaw_error = yaw - ref_yaw
         rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
         rospy.loginfo("Yaw Error [deg]: %s" % (yaw_error*180/np.pi))
         error = crosstrack_error + self.yaw_err_gain*yaw_error
-        delta = self.discrete_ss.get_output(-error)
+        delta = self.discrete_ss.get_output(-error, steer_limit)
         rospy.loginfo("Steer Angle [deg]: %s" % (delta*180/np.pi))
-        delta = np.clip(delta, -35 * np.pi / 180, 35 * np.pi / 180)
+        delta = np.clip(delta, -steer_limit, steer_limit)
         return delta
 
 
