@@ -251,7 +251,7 @@ class SISOLookaheadController(AbstractLateralController):
         """Compute steer angle using a discrete FIR filter."""
         crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y,
                                               ref_yaw, self.lookahead)
-        yaw_error = yaw - ref_yaw
+        yaw_error = ref_yaw - yaw
         rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
         rospy.loginfo("Yaw Error [deg]: %s" % (yaw_error*180/np.pi))
         error = crosstrack_error + self.yaw_err_gain*yaw_error
