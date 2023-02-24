@@ -196,17 +196,51 @@ class DiscreteFilter:
         new_output /= self.a[0]
         self.past_outputs.appendleft(new_output)
         return new_output
+    
+
+class DiscreteStateSpace:
+    """A discrete state space model implementing the equations:
+        x[k+1] = A*x[k] + B*u[k]
+        y[k] = C*x[k] + D*u[k] 
+
+    where:
+        x[k+1] is the state vector, x, at time step k+1,
+        A is the state space matrix
+        B is the input matrix
+        C is the measurement state matrix
+        D is the measurement input matrix
+        y[k] is the output, y, at time step k.
+
+    Used to remove dependency on scipy.
+    """
+
+    def __init__(self, A, B, C, D, num_states):
+        self.A = A
+        self.B = B
+        self.C = C
+        self.D = D
+        self.x_k = np.zeros((num_states,1))
+
+    def get_output(self, input):
+        """Computes the output of the discrete state equation."""
+        new_x = self.A.dot(self.x_k) + self.B.dot(input)
+        state_msg = "States: \n"
+        for i in range(self.num_states):
+            state_msg += "\t %s: %s\n" % (i, self.x_k[i])
+        rospy.loginfo(state_msg[:-2])
+        output = self.C.dot(self.x_k) + self.D.dot(input)
+        self.x_k = new_x
+        return output
 
 
 class SISOLookaheadController(AbstractLateralController):
     """A frequency-based controller designed using the youla parameterization
     technique. Designed in the continuous-time domain and converted to a
-    discrete FIR filter."""
+    discrete state space equation."""
 
-    def __init__(self, numerator, denominator, lookahead, config):
+    def __init__(self, A, B, C, D, num_states, lookahead, config):
         self.config = config
-        self.control_filter = DiscreteFilter(numerator,
-                                             denominator)
+        self.discrete_ss = DiscreteStateSpace(A, B, C, D, num_states)
         self.lookahead = lookahead
 
     def get_steer_angle(self, x, y, yaw, ref_x, ref_y, ref_yaw):
@@ -214,9 +248,7 @@ class SISOLookaheadController(AbstractLateralController):
         crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y,
                                               ref_yaw, self.lookahead)
         rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
-        delta = self.control_filter.get_output(crosstrack_error)
-        delta *= 2
-        # delta = 0.01 * crosstrack_error
+        delta = self.discrete_ss.get_output(crosstrack_error)
         rospy.loginfo("Steer Angle [deg]: %s" % (delta*180/np.pi))
         delta = np.clip(delta, -35 * np.pi / 180, 35 * np.pi / 180)
         return delta
