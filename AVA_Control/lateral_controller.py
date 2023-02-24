@@ -183,7 +183,7 @@ class DiscreteFilter:
         self.past_inputs = deque([0] * len(b), maxlen=len(b))
         self.past_outputs = deque([0] * (len(a) - 1), maxlen=len(a)-1)
 
-    def get_output(self, input):
+    def get_output(self, input, saturation=None):
         """Computes the output of the filter.
 
         Computes the next output, y[n] given y[n-1:n-N] and x[n:n-M] where 
@@ -247,13 +247,19 @@ class SISOLookaheadController(AbstractLateralController):
     technique. Designed in the continuous-time domain and converted to a
     discrete state space equation."""
 
-    def __init__(self, recorder, A, B, C, D, num_states, lookahead, 
-                 yaw_err_gain, config):
+    def __init__(self, recorder, lookahead, yaw_err_gain, config, 
+                 A=None, B=None, C=None, D=None, num_states=None,
+                 numerator=None, denominator=None):
+        if A is None and numerator is None:
+            raise NotImplementedError
         self.recorder = recorder
         self.config = config
-        self.discrete_ss = DiscreteStateSpace(A, B, C, D, num_states)
         self.lookahead = lookahead
         self.yaw_err_gain = yaw_err_gain
+        if A:
+            self.discrete_tf = DiscreteStateSpace(A, B, C, D, num_states)
+        if numerator:
+            self.discrete_tf = DiscreteFilter(numerator, denominator)
 
     def get_steer_angle(self, x, y, yaw, ref_x, ref_y, ref_yaw):
         """Compute steer angle using a discrete FIR filter."""
@@ -264,7 +270,7 @@ class SISOLookaheadController(AbstractLateralController):
         rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
         rospy.loginfo("Yaw Error [deg]: %s" % (yaw_error*180/np.pi))
         error = crosstrack_error + self.yaw_err_gain*yaw_error
-        delta = self.discrete_ss.get_output(-error, steer_limit)
+        delta = self.discrete_tf.get_output(-error, steer_limit)
         rospy.loginfo("Steer Angle [deg]: %s" % (delta*180/np.pi))
         delta = np.clip(delta, -steer_limit, steer_limit)
         return delta
@@ -375,11 +381,13 @@ class ROSLateralController:
             self.controller = SISOLookaheadController(
                 recorder=self.recording,
                 config=self.config,
-                A=np.array(ctrl_config["A"]),
-                B=np.array(ctrl_config["B"]),
-                C=np.array(ctrl_config["C"]),
-                D=np.array(ctrl_config["D"]),
-                num_states=ctrl_config["num_controller_states"],
+                # A=np.array(ctrl_config["A"]),
+                # B=np.array(ctrl_config["B"]),
+                # C=np.array(ctrl_config["C"]),
+                # D=np.array(ctrl_config["D"]),
+                # num_states=ctrl_config["num_controller_states"],
+                numerator=ctrl_config["numerator"],
+                denominator=ctrl_config["denominator"],
                 lookahead=ctrl_config["lookahead_m"],
                 yaw_err_gain=ctrl_config["yaw_err_gain"])
         else:
