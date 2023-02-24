@@ -219,6 +219,7 @@ class DiscreteStateSpace:
         self.B = B
         self.C = C
         self.D = D
+        self.num_states = num_states
         self.x_k = np.zeros((num_states,1))
 
     def get_output(self, input):
@@ -238,7 +239,8 @@ class SISOLookaheadController(AbstractLateralController):
     technique. Designed in the continuous-time domain and converted to a
     discrete state space equation."""
 
-    def __init__(self, A, B, C, D, num_states, lookahead, config):
+    def __init__(self, recorder, A, B, C, D, num_states, lookahead, config):
+        self.recorder = recorder
         self.config = config
         self.discrete_ss = DiscreteStateSpace(A, B, C, D, num_states)
         self.lookahead = lookahead
@@ -259,6 +261,8 @@ class Data:
 
     def __init__(self, experiment_config):
         self.config = experiment_config
+        # TODO: Add flexible attribute so specific attributes don't have to be
+        # populated. Ideally, we provide a header, and then the data follows.
         self.steering = []
         self.vx = []
         self.refx = []
@@ -355,9 +359,13 @@ class ROSLateralController:
         elif self.config["controller_type"] == "SISOLookaheadYoula":
             ctrl_config = self.config["controller_config"]
             self.controller = SISOLookaheadController(
+                recorder=self.recording,
                 config=self.config,
-                numerator=ctrl_config["numerator"],
-                denominator=ctrl_config["denominator"],
+                A=np.array(ctrl_config["A"]),
+                B=np.array(ctrl_config["B"]),
+                C=np.array(ctrl_config["C"]),
+                D=np.array(ctrl_config["D"]),
+                num_states=ctrl_config["num_controller_states"],
                 lookahead=ctrl_config["lookahead_m"])
         else:
             raise NotImplementedError
