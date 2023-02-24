@@ -239,18 +239,23 @@ class SISOLookaheadController(AbstractLateralController):
     technique. Designed in the continuous-time domain and converted to a
     discrete state space equation."""
 
-    def __init__(self, recorder, A, B, C, D, num_states, lookahead, config):
+    def __init__(self, recorder, A, B, C, D, num_states, lookahead, 
+                 yaw_err_gain, config):
         self.recorder = recorder
         self.config = config
         self.discrete_ss = DiscreteStateSpace(A, B, C, D, num_states)
         self.lookahead = lookahead
+        self.yaw_err_gain = yaw_err_gain
 
     def get_steer_angle(self, x, y, yaw, ref_x, ref_y, ref_yaw):
         """Compute steer angle using a discrete FIR filter."""
         crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y,
                                               ref_yaw, self.lookahead)
+        yaw_error = yaw - ref_yaw
         rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
-        delta = self.discrete_ss.get_output(crosstrack_error)
+        rospy.loginfo("Yaw Error [deg]: %s" % (yaw_error*180/np.pi))
+        error = crosstrack_error + self.yaw_err_gain*yaw_error
+        delta = self.discrete_ss.get_output(error)
         rospy.loginfo("Steer Angle [deg]: %s" % (delta*180/np.pi))
         delta = np.clip(delta, -35 * np.pi / 180, 35 * np.pi / 180)
         return delta
@@ -366,7 +371,8 @@ class ROSLateralController:
                 C=np.array(ctrl_config["C"]),
                 D=np.array(ctrl_config["D"]),
                 num_states=ctrl_config["num_controller_states"],
-                lookahead=ctrl_config["lookahead_m"])
+                lookahead=ctrl_config["lookahead_m"],
+                yaw_err_gain=ctrl_config["yaw_err_gain"])
         else:
             raise NotImplementedError
 
