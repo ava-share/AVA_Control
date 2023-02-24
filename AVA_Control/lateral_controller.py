@@ -256,7 +256,7 @@ class SISOLookaheadController(AbstractLateralController):
         self.config = config
         self.lookahead = lookahead
         self.yaw_err_gain = yaw_err_gain
-        if A:
+        if A is not None:
             self.discrete_tf = DiscreteStateSpace(A, B, C, D, num_states)
         if numerator:
             self.discrete_tf = DiscreteFilter(numerator, denominator)
