@@ -13,10 +13,10 @@
         "C": [0.0980, -0.1378, 0.1292, -0.1626],
         "D": [0],
         "num_controller_states": 4,
-        "numerator": [0, 0.0980, -0.2755, 0.2584, -0.0808],
-        "denominator": [1, -2.8588, 2.8497, -1.1034, 0.1129],
+        "numerator": [0, 0.0233, -0.0525, 0.0385, -0.0092],
+        "denominator": [1, -2.8375, 2.9390, -1.3167, 0.2155],
         "lookahead_m": 1.6,
-        "yaw_err_gain": 10
+        "yaw_err_gain": 5
     },
     "enable_velocity_control": true,
     "constant_velocity_mps": 5.0,
