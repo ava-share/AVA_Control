@@ -75,8 +75,9 @@ class AbstractLateralController:
         front_axle_y = ego_y + lookahead * np.sin(ego_yaw)
 
         ref_to_axle = np.array([front_axle_x - ref_x, front_axle_y - ref_y])
-        crosstrack_vector = np.array([np.sin(ref_yaw), -np.cos(ref_yaw)])
-        crosstrack_err = ref_to_axle.dot(crosstrack_vector)
+        crosstrack_vector = np.array([np.cos(ref_yaw), np.sin(ref_yaw)])
+        crosstrack_err = -(ref_to_axle[0]*crosstrack_vector[1] - \
+                           ref_to_axle[1]*crosstrack_vector[0])
         if self.config["enable_logging"]:
             self.recorder.crosstrack_error.append(crosstrack_err)
 
@@ -182,7 +183,7 @@ class DiscreteFilter:
         self.past_inputs = deque([0] * len(b), maxlen=len(b))
         self.past_outputs = deque([0] * (len(a) - 1), maxlen=len(a)-1)
 
-    def get_output(self, input):
+    def get_output(self, input, saturation=None):
         """Computes the output of the filter.
 
         Computes the next output, y[n] given y[n-1:n-N] and x[n:n-M] where 
@@ -196,29 +197,82 @@ class DiscreteFilter:
         new_output /= self.a[0]
         self.past_outputs.appendleft(new_output)
         return new_output
+    
+
+class DiscreteStateSpace:
+    """A discrete state space model implementing the equations:
+        x[k+1] = A*x[k] + B*u[k]
+        y[k] = C*x[k] + D*u[k] 
+
+    where:
+        x[k+1] is the state vector, x, at time step k+1,
+        A is the state space matrix
+        B is the input matrix
+        C is the measurement state matrix
+        D is the measurement input matrix
+        y[k] is the output, y, at time step k.
+
+    Used to remove dependency on scipy.
+    """
+
+    def __init__(self, A, B, C, D, num_states):
+        self.A = A
+        self.B = B
+        self.C = C
+        self.D = D
+        self.num_states = num_states
+        self.x_k = np.zeros((num_states,1))
+
+    def get_output(self, input, saturation=None):
+        """Computes the output of the discrete state equation."""
+        new_x = self.A.dot(self.x_k) + self.B.dot(input)
+        state_msg = "States: \n"
+        for i in range(self.num_states):
+            state_msg += "\t %s: %s\n" % (i, self.x_k[i])
+        rospy.loginfo(state_msg[:-2])
+        output = self.C.dot(self.x_k) + self.D.dot(input)
+
+        # Implement anti-windup as saturating the inner states when the output
+        # exceeds the output saturation.
+        if saturation:
+            next_output = self.C.dot(new_x) + self.D.dot(input)
+            if abs(next_output) > abs(saturation):
+                return float(output)
+        self.x_k = new_x
+        return float(output)
 
 
 class SISOLookaheadController(AbstractLateralController):
     """A frequency-based controller designed using the youla parameterization
     technique. Designed in the continuous-time domain and converted to a
-    discrete FIR filter."""
+    discrete state space equation."""
 
-    def __init__(self, numerator, denominator, lookahead, config):
+    def __init__(self, recorder, lookahead, yaw_err_gain, config, 
+                 A=None, B=None, C=None, D=None, num_states=None,
+                 numerator=None, denominator=None):
+        if A is None and numerator is None:
+            raise NotImplementedError
+        self.recorder = recorder
         self.config = config
-        self.control_filter = DiscreteFilter(numerator,
-                                             denominator)
         self.lookahead = lookahead
+        self.yaw_err_gain = yaw_err_gain
+        if A is not None:
+            self.discrete_tf = DiscreteStateSpace(A, B, C, D, num_states)
+        if numerator:
+            self.discrete_tf = DiscreteFilter(numerator, denominator)
 
     def get_steer_angle(self, x, y, yaw, ref_x, ref_y, ref_yaw):
         """Compute steer angle using a discrete FIR filter."""
+        steer_limit = 35 * np.pi / 180
         crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y,
                                               ref_yaw, self.lookahead)
+        yaw_error = yaw - ref_yaw
         rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
-        delta = self.control_filter.get_output(crosstrack_error)
-        delta *= 2
-        # delta = 0.01 * crosstrack_error
+        rospy.loginfo("Yaw Error [deg]: %s" % (yaw_error*180/np.pi))
+        error = crosstrack_error + self.yaw_err_gain*yaw_error
+        delta = self.discrete_tf.get_output(-error, steer_limit)
         rospy.loginfo("Steer Angle [deg]: %s" % (delta*180/np.pi))
-        delta = np.clip(delta, -35 * np.pi / 180, 35 * np.pi / 180)
+        delta = np.clip(delta, -steer_limit, steer_limit)
         return delta
 
 
@@ -227,6 +281,8 @@ class Data:
 
     def __init__(self, experiment_config):
         self.config = experiment_config
+        # TODO: Add flexible attribute so specific attributes don't have to be
+        # populated. Ideally, we provide a header, and then the data follows.
         self.steering = []
         self.vx = []
         self.refx = []
@@ -253,10 +309,9 @@ class Data:
                 test = ','.join((
                     str(self.t[i]),             str(self.steering[i]),
                     str(self.vx[i]),            str(self.refx[i]),
-                    str(self.refy[i]),          str(self.crosstrack_error[i]),
-                    str(self.refyaw[i]),        str(self.egox[i]),
-                    str(self.egoy[i]),          str(self.egoyaw[i]),
-                    str(self.auto[i]))
+                    str(self.refy[i]),          str(self.refyaw[i]),
+                    str(self.egox[i]),          str(self.egoy[i]),
+                    str(self.egoyaw[i]),        str(self.crosstrack_error[i]))
                 )
                 i += 1
                 f.write(test)
@@ -322,11 +377,25 @@ class ROSLateralController:
                 LPF_bandwidth=ctrl_config["lowpass_filter_bandwidth_Hz"])
         elif self.config["controller_type"] == "SISOLookaheadYoula":
             ctrl_config = self.config["controller_config"]
-            self.controller = SISOLookaheadController(
-                config=self.config,
-                numerator=ctrl_config["numerator"],
-                denominator=ctrl_config["denominator"],
-                lookahead=ctrl_config["lookahead_m"])
+            if ctrl_config["use_state_space"]:
+                self.controller = SISOLookaheadController(
+                    recorder=self.recording,
+                    config=self.config,
+                    A=np.array(ctrl_config["A"]),
+                    B=np.array(ctrl_config["B"]),
+                    C=np.array(ctrl_config["C"]),
+                    D=np.array(ctrl_config["D"]),
+                    num_states=ctrl_config["num_controller_states"],
+                    lookahead=ctrl_config["lookahead_m"],
+                    yaw_err_gain=ctrl_config["yaw_err_gain"])
+            else:
+                self.controller = SISOLookaheadController(
+                    recorder=self.recording,
+                    config=self.config,
+                    numerator=ctrl_config["numerator"],
+                    denominator=ctrl_config["denominator"],
+                    lookahead=ctrl_config["lookahead_m"],
+                    yaw_err_gain=ctrl_config["yaw_err_gain"])
         else:
             raise NotImplementedError
 
@@ -458,6 +527,12 @@ class ROSLateralController:
         y = pose.position.y
         q = pose.orientation
         _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
+
+        # Wrap yaw angle around (-pi, pi).
+        if yaw > np.pi:
+            yaw -= 2*np.pi
+        if yaw < -np.pi:
+            yaw += 2*np.pi
         return x, y, yaw
 
 
