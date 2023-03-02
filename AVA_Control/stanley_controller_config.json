@@ -6,6 +6,7 @@
         "softening_gain": 1.0,
         "max_steer_rad": 24,
         "wheelbase_m": 2.9,
+        "distance_to_cg_m": 1.6,
         "lookahead_m": 2.9,
         "enable_lowpass_filter": true,
         "lowpass_filter_bandwidth_Hz": 1

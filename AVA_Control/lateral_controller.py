@@ -3,7 +3,7 @@
 Autoware AI. Uses Autoware AI messages version 1.14.0.
 """
 import argparse
-from autoware_msgs.msg import ControlCommandStamped
+from autoware_msgs.msg import LaneArray, ControlCommandStamped
 from collections import deque
 from geometry_msgs.msg import TwistStamped, PoseStamped
 import json
@@ -76,12 +76,29 @@ class AbstractLateralController:
 
         ref_to_axle = np.array([front_axle_x - ref_x, front_axle_y - ref_y])
         crosstrack_vector = np.array([np.cos(ref_yaw), np.sin(ref_yaw)])
-        crosstrack_err = -(ref_to_axle[0]*crosstrack_vector[1] - \
+        crosstrack_err = -(ref_to_axle[0]*crosstrack_vector[1] -
                            ref_to_axle[1]*crosstrack_vector[0])
         if self.config["enable_logging"]:
             self.recorder.crosstrack_error.append(crosstrack_err)
 
         return crosstrack_err
+
+    # TODO: Remove this function and use compute_error. Need to move logging
+    # out of function.
+    def log_global_error(self, ego_x, ego_y, ego_yaw, ref_x, ref_y,
+                         ref_yaw, distance_to_cg):
+        '''Computes the crosstrack error and yaw error and logs them.'''
+        ego_cg_pose = np.array([
+            [ego_x + distance_to_cg*np.cos(ego_yaw)],
+            [ego_y + distance_to_cg*np.sin(ego_yaw)],
+            [ego_yaw]])
+        ref_to_cg = np.array([ego_cg_pose[0] - ref_x, ego_cg_pose[1] - ref_y])
+        crosstrack_vector = np.array([np.cos(ref_yaw), np.sin(ref_yaw)])
+        crosstrack_err = -(ref_to_cg[0]*crosstrack_vector[1] -
+                           ref_to_cg[1]*crosstrack_vector[0])
+        if self.config["enable_logging"]:
+            self.recorder.global_crosstrack_error.append(crosstrack_err)
+            self.recorder.global_yaw_error.append(ego_yaw - ref_yaw)
 
     def get_steer_angle(self):
         """Computes the steer angle according to the lateral control law."""
@@ -136,7 +153,8 @@ class StanleyController(AbstractLateralController):
         :param current_velocity:
         :return: steering output, target index, crosstrack error
         """
-        crosstrack_error = self.compute_error(x, y, yaw, refx, refy, refyaw, self.L)
+        crosstrack_error = self.compute_error(
+            x, y, yaw, refx, refy, refyaw, self.L)
         if self.config["enable_debugging"]:
             print('Crosstrack_Error: '+str(crosstrack_error))
 
@@ -197,7 +215,7 @@ class DiscreteFilter:
         new_output /= self.a[0]
         self.past_outputs.appendleft(new_output)
         return new_output
-    
+
 
 class DiscreteStateSpace:
     """A discrete state space model implementing the equations:
@@ -221,7 +239,7 @@ class DiscreteStateSpace:
         self.C = C
         self.D = D
         self.num_states = num_states
-        self.x_k = np.zeros((num_states,1))
+        self.x_k = np.zeros((num_states, 1))
 
     def get_output(self, input, saturation=None):
         """Computes the output of the discrete state equation."""
@@ -247,7 +265,7 @@ class SISOLookaheadController(AbstractLateralController):
     technique. Designed in the continuous-time domain and converted to a
     discrete state space equation."""
 
-    def __init__(self, recorder, lookahead, yaw_err_gain, config, 
+    def __init__(self, recorder, lookahead, yaw_err_gain, config,
                  A=None, B=None, C=None, D=None, num_states=None,
                  numerator=None, denominator=None):
         if A is None and numerator is None:
@@ -292,6 +310,8 @@ class Data:
         self.egoy = []
         self.egoyaw = []
         self.crosstrack_error = []
+        self.global_crosstrack_error = []
+        self.global_yaw_error = []
         self.auto = []  # autonomous or manual?
         self.t = []  # time
 
@@ -311,7 +331,9 @@ class Data:
                     str(self.vx[i]),            str(self.refx[i]),
                     str(self.refy[i]),          str(self.refyaw[i]),
                     str(self.egox[i]),          str(self.egoy[i]),
-                    str(self.egoyaw[i]),        str(self.crosstrack_error[i]))
+                    str(self.egoyaw[i]),        str(self.crosstrack_error[i]),
+                    str(self.global_crosstrack_error[i]),
+                    str(self.global_yaw_error[i]))
                 )
                 i += 1
                 f.write(test)
@@ -350,12 +372,15 @@ class ROSLateralController:
         with open(self.config_path, 'r') as f:
             self.config = json.load(f)
         self.recording = Data(self.config)
+        self.wheelbase = self.config["controller_config"]["wheelbase_m"]
+        self.distance_to_cg = self.config["controller_config"]["distance_to_cg_m"]
 
         self.rate = rospy.Rate(self.config['rate_Hz'])  # [Hz]
 
         self.ref_pose = None
         self.ego_pose = None
         self.ego_twist = None
+        self.global_path = None
 
         rospy.Subscriber("/ctrl_reference_pose", PoseStamped,
                          callback=self.ReferencePoseCallback, queue_size=1)
@@ -363,6 +388,8 @@ class ROSLateralController:
                          callback=self.CurrentPoseCallback, queue_size=1)
         rospy.Subscriber("/current_velocity", TwistStamped,
                          callback=self.CurrentTwistCallback, queue_size=1)
+        rospy.Subscriber("/lane_waypoints_array", LaneArray,
+                         callback=self.GlobalPathCallback, queue_size=1)
 
         if self.config["controller_type"] == "stanley":
             ctrl_config = self.config["controller_config"]
@@ -445,12 +472,39 @@ class ROSLateralController:
         """Get the current linear and angular velocities of the vehicle."""
         self.ego_twist = msg.twist
 
+    def GlobalPathCallback(self, msg):
+        '''Get the global path.'''
+        # Assume that the first lane is the desired lane.
+        self.global_path = msg.lanes[0]
+
+    def get_closest_global_waypoint(self, ego_pose, global_path):
+        '''Gets the closest global path waypoint to the ego CG.'''
+        ego_pose = self.unpack_pose(ego_pose)
+
+        # Get closest waypoint to ego vehicle CG.
+        waypoints = []
+        for waypoint in global_path.waypoints:
+            waypoint_pose = self.unpack_pose(waypoint.pose.pose)
+            waypoint_pose_np = np.array(waypoint_pose).reshape((3, 1))
+            waypoints.append(waypoint_pose_np)
+        waypoints_np = np.array(waypoints)
+        # Find closest waypoint.
+        ego_cg_pose = np.array([
+            [ego_pose[0] + self.distance_to_cg*np.cos(ego_pose[2])],
+            [ego_pose[1] + self.distance_to_cg*np.sin(ego_pose[2])],
+            [ego_pose[2]]])
+        ego_to_waypoints = waypoints_np - ego_cg_pose
+        distances = np.linalg.norm(ego_to_waypoints[:, :2], axis=1)
+        closest_i = np.argmin(distances)
+        return waypoints[closest_i].flatten()
+
     def publisher(self):
         """Compute and publish control command."""
         # Store ego/ref pose to prevent overwritting while computing.
         ref_pose = self.ref_pose
         ego_pose = self.ego_pose
         ego_twist = self.ego_twist
+        global_path = self.global_path
 
         if ref_pose is not None:
             rospy.loginfo_once("Received reference pose.")
@@ -469,10 +523,19 @@ class ROSLateralController:
             ego_vx = ego_twist.linear.x
         else:
             rospy.loginfo_throttle(1, "Waiting for ego twist.")
-        
+
+        if global_path is not None:
+            rospy.loginfo_once("Received global reference pose.")
+            if ego_pose is not None:
+                g_ref_x, g_ref_y, g_ref_yaw = \
+                    self.get_closest_global_waypoint(ego_pose, global_path)
+        else:
+            rospy.loginfo_throttle(1, "Waiting for global reference pose.")
+
         if ref_pose is None or \
                 ego_pose is None or \
-                ego_twist is None:
+                ego_twist is None or \
+                global_path is None:
             return
 
         # TODO: Come up with a better controller API so we don't need different
@@ -482,10 +545,16 @@ class ROSLateralController:
                 self.controller.get_steer_angle(
                     ego_x, ego_y, ego_yaw, ego_vx, ref_x,
                     ref_y, ref_yaw)
+            self.controller.log_global_error(ego_x, ego_y, ego_yaw,
+                                             g_ref_x, g_ref_y, g_ref_yaw,
+                                             self.distance_to_cg)
         elif self.config["controller_type"] == "SISOLookaheadYoula":
             steer_angle = \
                 self.controller.get_steer_angle(
                     ego_x, ego_y, ego_yaw, ref_x, ref_y, ref_yaw)
+            self.controller.log_global_error(ego_x, ego_y, ego_yaw,
+                                             g_ref_x, g_ref_y, g_ref_yaw,
+                                             self.distance_to_cg)
         else:
             steer_angle = 0
             rospy.logerr("No steering controller selected in config.")

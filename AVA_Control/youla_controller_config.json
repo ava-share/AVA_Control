@@ -16,6 +16,8 @@
         "num_controller_states": 4,
         "numerator": [0, 0.0104, -0.0235, 0.0172, -0.0041],
         "denominator": [1, -2.9815, 3.2685, -1.5614, 0.2747],
+        "wheelbase_m": 2.9,
+        "distance_to_cg_m": 1.6,
         "lookahead_m": 1.6,
         "yaw_err_gain": 5
     },
