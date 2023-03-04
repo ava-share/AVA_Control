@@ -75,9 +75,8 @@ class AbstractLateralController:
         front_axle_y = ego_y + lookahead * np.sin(ego_yaw)
 
         ref_to_axle = np.array([front_axle_x - ref_x, front_axle_y - ref_y])
-        crosstrack_vector = np.array([np.cos(ref_yaw), np.sin(ref_yaw)])
-        crosstrack_err = -(ref_to_axle[0]*crosstrack_vector[1] - \
-                           ref_to_axle[1]*crosstrack_vector[0])
+        crosstrack_vector = np.array([np.sin(ref_yaw), -np.cos(ref_yaw)])
+        crosstrack_err = ref_to_axle.dot(crosstrack_vector)
         if self.config["enable_logging"]:
             self.recorder.crosstrack_error.append(crosstrack_err)
 
@@ -264,7 +263,7 @@ class SISOLookaheadController(AbstractLateralController):
     def get_steer_angle(self, x, y, yaw, ref_x, ref_y, ref_yaw):
         """Compute steer angle using a discrete FIR filter."""
         steer_limit = 35 * np.pi / 180
-        crosstrack_error = self.compute_error(x, y, yaw, ref_x, ref_y,
+        crosstrack_error = -self.compute_error(x, y, yaw, ref_x, ref_y,
                                               ref_yaw, self.lookahead)
         yaw_error = yaw - ref_yaw
         rospy.loginfo("Crosstrack error [m]: %s" % crosstrack_error)
