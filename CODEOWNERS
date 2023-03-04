@@ -1,0 +1,7 @@
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# for more information on how github uses code owners.
+
+# Please Add your ownership to files as you add them.
+AVA_Control/lateral_controller.py @tvidano
+AVA_Control/path_analyzer.py @tvidano
+AVA_Control/*_controller_config.json @tvidano
